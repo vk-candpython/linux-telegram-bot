@@ -6,6 +6,8 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-blue?logo=linux&logoColor=white)](https://www.linux.org/)
 [![Language](https://img.shields.io/badge/language-Python%203-3776AB?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Commands](https://img.shields.io/badge/commands-50+-brightgreen)]()
+[![Lines](https://img.shields.io/badge/lines-1,480+-orange)]()
 
 *Advanced Telegram-based Remote Administration Tool for Linux*
 
@@ -59,13 +61,13 @@
 | Category | Capabilities |
 |----------|-------------|
 | **System Control** | Reboot, shutdown, sleep, process management, service control, kernel modules |
-| **File System** | Browse, upload, download, create, delete, hide, zip, chmod |
+| **File System** | Browse, upload, download, create, delete, hide, zip, chmod, mount/umount, file editing |
 | **Network** | IP config, route table, ARP cache, netstat, WiFi scanning/passwords |
 | **User Interface** | Screenshot, webcam capture, audio recording, mouse/keyboard/clipboard control |
-| **Surveillance** | Keylogger (4 modes), clipboard monitoring, message display |
+| **Surveillance** | Keylogger (4 modes with navigation parsing), clipboard monitoring, message display |
 | **Persistence** | Systemd service, crontab, autostart, environment variables, internal autostart |
 | **Security** | User management, app blocking, website blocking, SHADOW dump, UID switching |
-| **Information** | Full systeminfo (CPU, GPU, RAM, disks, battery, BIOS, etc.) |
+| **Information** | Full systeminfo (CPU, GPU, RAM, disks, battery, BIOS, mounts, etc.) |
 
 ### Architecture
 
@@ -100,14 +102,17 @@ Telegram Bot API ←→ Python Bot (4 threads) ←→ System Commands
 | **Regex Command Parser** | Cached compiled patterns with O(1) lookup for repeat commands |
 | **Lazy Error Stubs** | Missing libraries produce clear errors only on actual use, not at startup |
 | **Anonymous Sessions** | Disk files contain only encrypted dates — no usernames stored permanently |
+| **File Timestamp Manipulation** | Change access/modify times via `os.utime` with Unix timestamps or date strings |
+| **Mount Management** | Full `/proc/mounts` parsing, mount with `-t`/`-o` options, lazy unmount |
 
 ### System Commands
 
 | Command | Description |
 |---------|-------------|
-| `systeminfo` | Full hardware/software inventory (CPU, GPU, RAM, disks, battery, BIOS, etc.) |
+| `systeminfo` | Full hardware/software inventory (CPU, GPU, RAM, disks, battery, BIOS, mounts, etc.) |
 | `lshw` | Detailed hardware information |
 | `dmesg` | Kernel ring buffer messages |
+| `modprobe` | Kernel module management (list, install, remove) |
 | `ps` | Process list with PID, CPU%, MEM, runtime, status |
 | `kill` | Terminate process by PID or name |
 | `run` | Launch applications/files |
@@ -121,7 +126,9 @@ Telegram Bot API ←→ Python Bot (4 threads) ←→ System Commands
 |---------|-------------|
 | `pwd` / `cd` | Navigate directories |
 | `ls` | List files with permissions, owner, size |
+| `mount` | List mounts, mount devices (with FS type and options), unmount |
 | `mkfile` / `mkdir` | Create files/directories |
+| `chg` | Edit files (set/delete values, change timestamps) |
 | `rn` | Rename files/directories |
 | `rm` / `rmdir` | Delete files/directories |
 | `cp` / `mv` | Copy/move files |
@@ -153,7 +160,7 @@ Telegram Bot API ←→ Python Bot (4 threads) ←→ System Commands
 | `keyboard` | Type, press keys, remap, block keys |
 | `clipboard` | Read/write/clear clipboard |
 | `msg` | Display notifications (notify-send) or message boxes (xmessage) |
-| `keylogger` | Enable/disable/retrieve keystrokes (4 output modes) |
+| `keylogger` | Enable/disable/retrieve keystrokes (4 output modes: base, char, hotkey, no hotkey) |
 
 ### Persistence Commands
 
@@ -182,7 +189,7 @@ Telegram Bot API ←→ Python Bot (4 threads) ←→ System Commands
 ```bash
 sudo apt install python3 python3-pip python3-venv \
     ffmpeg xdotool xmessage libnotify-bin \
-    net-tools iproute2 nmcli lshw
+    net-tools iproute2 nmcli lshw mount
 ```
 
 ### 📥 Installation
@@ -264,23 +271,6 @@ All three are monitored and restored every 3 seconds by `init_bot_exe()`.
 
 ## 🔐 Security & Encryption
 
-### Encryption Algorithm
-
-Custom XOR-based stream cipher with feedback mutation:
-
-```python
-def encrypt(data):
-    k0, k1 = KEY  # Generated from SEED
-    f = i = 0     # Feedback and position
-    
-    for c in data:
-        n = ord(c)
-        x = (n << k0) ^ (((k1 + f) + i) & 0xFF)
-        f = (f ^ x) & 0xFF           # Feedback mutation
-        yield chr(x)
-        i += 1
-```
-
 **Properties:**
 - Each encrypted byte depends on: key, position, and previous ciphertext
 - Feedback creates avalanche effect
@@ -318,8 +308,15 @@ def encrypt(data):
 ls                              # List directory
 ls /home/user                   # List specific directory
 cd /home/user                   # Change directory
+mount -g                        # List all mounts
+mount -m /dev/sdb1 -p /mnt/usb -t vfat -o rw   # Mount device
+mount -u /mnt/usb               # Unmount
 mkfile test.txt -d Hello\tWorld\n  # Create file with content
 mkdir new_folder                # Create directory
+chg -s /etc/hosts -p old -v new # Replace text in file
+chg -d /etc/hosts -p badline    # Delete line from file
+chg -t file.txt -a 1714234567 -m none  # Change access time only
+chg -t file.txt -a none -m "27.04.2026 15:30:00"  # Change modify time
 rn old.txt -n new.txt           # Rename
 cp source.txt -t /dest/         # Copy
 mv source.txt -t /dest/         # Move
@@ -351,15 +348,15 @@ site -l                         # List blocked sites
 systeminfo                      # Full system report
 lshw                            # Hardware details
 dmesg                           # Kernel messages
+modprobe -g                     # List kernel modules
+modprobe -i vboxdrv             # Install module
+modprobe -d vboxdrv             # Remove module
 ps                              # Process list
 kill firefox                    # Kill by name
 kill 1234                       # Kill by PID
 run /path/app -a "--flag"       # Launch file
 cmd -g "ls -la"                 # Execute with output
 cmd -e "rm -f /tmp/*"           # Execute without output
-modprobe -g                     # List kernel modules
-modprobe -i vboxdrv             # Install module
-modprobe -d vboxdrv             # Remove module
 time -g                         # Get time
 date -s 2026-12-31              # Set date
 sleep                           # Suspend computer
@@ -498,6 +495,15 @@ env -q MYVAR                                     # Query
 env -d MYVAR                                     # Delete
 ```
 
+### 6. Mount Management (NEW)
+
+```bash
+mount -g                                         # List all mounted filesystems
+mount -m /dev/sdb1 -p /mnt/usb -t vfat -o rw    # Mount with FS type and options
+mount -m /dev/sr0 -p /media/cdrom                # Mount without FS type
+mount -u /mnt/usb                                # Lazy unmount
+```
+
 ---
 
 # Русский
@@ -511,12 +517,12 @@ env -d MYVAR                                     # Delete
 | Категория | Возможности |
 |-----------|-------------|
 | **Управление системой** | Перезагрузка, сон, управление процессами/службами/модулями ядра |
-| **Файловая система** | Навигация, загрузка, скачивание, создание, удаление, скрытие, архивация |
+| **Файловая система** | Навигация, загрузка, скачивание, создание, удаление, скрытие, архивация, монтирование, редактирование |
 | **Сеть** | IP-конфигурация, роутинг, ARP, netstat, WiFi (сканирование/пароли) |
 | **Интерфейс** | Скриншоты, веб-камера, запись/воспроизведение звука, мышь, клавиатура |
-| **Наблюдение** | Кейлоггер (4 режима), буфер обмена |
+| **Наблюдение** | Кейлоггер (4 режима с парсингом навигации), буфер обмена |
 | **Персистентность** | systemd, crontab, автозагрузка, переменные окружения, внутренний автозапуск |
-| **Безопасность** | Пользователи, блокировка приложений/сайтов, дамп SHADOW |
+| **Безопасность** | Пользователи, блокировка приложений/сайтов, дамп SHADOW, смена UID |
 
 ## ✨ Возможности
 
@@ -531,6 +537,8 @@ env -d MYVAR                                     # Delete
 | 🎨 **Форматирование** | Все таблицы через `tabulate` |
 | 📄 **Передача файлов** | Загрузка/скачивание любого размера |
 | 🔒 **Шифрование** | XOR-шифр с обратной связью |
+| 💾 **Монтирование** | Полное управление файловыми системами |
+| ✏️ **Редактирование** | Изменение содержимого файлов и временных меток |
 
 ## 🚀 Быстрый старт
 
@@ -539,7 +547,7 @@ env -d MYVAR                                     # Delete
 ```bash
 sudo apt install python3 python3-pip python3-venv \
     ffmpeg xdotool xmessage libnotify-bin \
-    net-tools iproute2 nmcli lshw
+    net-tools iproute2 nmcli lshw mount
 ```
 
 ### ⚙️ Конфигурация
@@ -586,8 +594,14 @@ sudo python3 bot.py
 ```bash
 ls /home/user                   # Список файлов
 cd /home/user                   # Сменить директорию
+mount -g                        # Список монтирования
+mount -m /dev/sdb1 -p /mnt/usb -t vfat -o rw   # Монтировать
+mount -u /mnt/usb               # Размонтировать
 mkfile test.txt -d "текст"      # Создать файл
 mkdir new_folder                # Создать папку
+chg -s file.txt -p old -v new   # Заменить текст
+chg -d file.txt -p badline      # Удалить строку
+chg -t file.txt -a none -m 1714234567  # Изменить время
 rn old.txt -n new.txt           # Переименовать
 cp source.txt -t /dest/         # Копировать
 hide secret.txt                 # Скрыть
@@ -610,6 +624,8 @@ site -d URL -n file.pdf         # Скачать с URL
 
 ```bash
 systeminfo                      # Полный отчёт
+modprobe -g                     # Модули ядра
+modprobe -i vboxdrv             # Установить модуль
 ps                              # Процессы
 kill firefox                    # Завершить по имени
 kill 1234                       # Завершить по PID
